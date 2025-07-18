@@ -1,0 +1,68 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.microservices'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven { url 'https://jitpack.io' }
+    maven { url 'https://repo.spring.io/release' }
+}
+
+ext {
+    set("reactiveRedisUtilsVersion", "v0.2.4")
+    set("redisUtilsVersion", "v0.1.2")
+    set('springCloudVersion', "2025.0.0-RC1")
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+
+    implementation 'org.springframework.security:spring-security-oauth2-core:6.4.4'
+
+    api 'org.springframework.boot:spring-boot-test-autoconfigure'
+
+    compileOnly "com.github.lkienkle11:redis-utils:${redisUtilsVersion}"
+    compileOnly "com.github.lkienkle11:reactive-redis-utils:${reactiveRedisUtilsVersion}"
+
+    compileOnly "com.github.ben-manes.caffeine:caffeine:3.1.8"
+
+    compileOnly 'org.springframework.data:spring-data-r2dbc:3.3.3'
+    compileOnly 'org.springframework.data:spring-data-jpa:3.4.4'
+    compileOnly 'io.projectreactor:reactor-core:3.7.4'
+
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'flashcard-access-guard-spring-boot-starter'
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
