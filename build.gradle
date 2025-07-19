@@ -17,6 +17,7 @@ repositories {
     mavenLocal()
     maven { url 'https://jitpack.io' }
     maven { url 'https://repo.spring.io/release' }
+    maven { url 'https://repo.spring.io/milestone' }
 }
 
 ext {
@@ -29,8 +30,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
 
     implementation 'org.springframework.security:spring-security-oauth2-core:6.4.4'
-
-    api 'org.springframework.boot:spring-boot-test-autoconfigure'
 
     compileOnly "com.github.lkienkle11:redis-utils:${redisUtilsVersion}"
     compileOnly "com.github.lkienkle11:reactive-redis-utils:${reactiveRedisUtilsVersion}"
@@ -46,6 +45,8 @@ dependencies {
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+
+    testImplementation 'org.springframework.boot:spring-boot-test-autoconfigure'
 }
 
 dependencyManagement {
