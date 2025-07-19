@@ -1,6 +1,7 @@
 package com.microservices.guard;
 
 import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.microservices.dto.common.SetCheckingParam;
 import com.microservices.entity.TempSetCard;
 import com.microservices.guard.port.SetFlashcardReader;
@@ -21,8 +22,6 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -64,6 +63,7 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public Mono<Void> checkReactive(SetCheckingParam param) {
         if (reactiveRedis == null) {
             return Mono.error(new ResponseStatusException(
@@ -99,23 +99,24 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
                         return Mono.empty();
                     }
 
-                    @SuppressWarnings("unchecked")
-                    ConcurrentMap<Object, Long> validateOnL1 = (ConcurrentMap<Object, Long>)
-                            validatedSetCardCache().getIfPresent(formatKey);
+                    Cache<Object, Object> l1CacheValidate = (Cache<Object, Object>)
+                            setCardInfoCache().getIfPresent(formatKey);
 
-                    if (validateOnL1 == null) {
-                        validateOnL1 = new ConcurrentHashMap<>();
+                    if (l1CacheValidate == null) {
+                        l1CacheValidate = Caffeine.newBuilder()
+                                .maximumSize(500)
+                                .build();
                     }
 
-                    if (validateOnL1.containsKey(userId)) {
-                        Long timeSet = validateOnL1.get(userId);
+                    Long timeSet = (Long) l1CacheValidate.getIfPresent(userId);
+                    if (timeSet != null) {
                         long currentTime = System.currentTimeMillis();
                         if (currentTime < timeSet) {
                             return Mono.empty();
                         }
                     }
 
-                    ConcurrentMap<Object, Long> finalValidateOnL = validateOnL1;
+                    Cache<Object, Object> finalL1CacheValidate = l1CacheValidate;
                     String rawPwd = param.getRawPwd();
                     String rawValidAt = param.getRawValidAt();
 
@@ -126,8 +127,8 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
                                     return reactiveRedis
                                             .getFromRedis(formatKeyRedis, Long.class)
                                             .map(expiredAt -> {
-                                                finalValidateOnL.put(userId, expiredAt);
-                                                validatedSetCardCache().put(formatKey, finalValidateOnL);
+                                                finalL1CacheValidate.put(userId, expiredAt);
+                                                validatedSetCardCache().put(formatKey, finalL1CacheValidate);
                                                 return Mono.empty();
                                             })
                                             .then();
@@ -146,14 +147,15 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
                                 return reactiveRedis
                                         .saveToSet(formatKeyRedis, now + ttl,
                                                 ttl, TimeUnit.SECONDS)           // :contentReference[oaicite:1]{index=1}
-                                        .doOnNext(v -> finalValidateOnL.put(userId, now + ttl))
-                                        .doOnNext(v -> validatedSetCardCache().put(formatKey, finalValidateOnL))
+                                        .doOnNext(v -> finalL1CacheValidate.put(userId, now + ttl))
+                                        .doOnNext(v -> validatedSetCardCache().put(formatKey, finalL1CacheValidate))
                                         .then();
                             });
                 }).then();
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public void checkBlocking(SetCheckingParam param) {
         if (redisUtils == null) {
             throw new ResponseStatusException(
@@ -179,16 +181,18 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
             return;
         }
 
-        @SuppressWarnings("unchecked")
-        ConcurrentMap<Object, Long> validateOnL1 = (ConcurrentMap<Object, Long>)
-                validatedSetCardCache().getIfPresent(formatKey);
+        Cache<Object, Object> l1CacheValidate = (Cache<Object, Object>)
+                setCardInfoCache().getIfPresent(formatKey);
 
-        if (validateOnL1 == null) {
-            validateOnL1 = new ConcurrentHashMap<>();
+        if (l1CacheValidate == null) {
+            l1CacheValidate = Caffeine.newBuilder()
+                    .maximumSize(500)
+                    .build();
         }
 
-        if (validateOnL1.containsKey(userId)) {
-            Long timeSet = validateOnL1.get(userId);
+        Long timeSet = (Long) l1CacheValidate.getIfPresent(userId);
+
+        if (timeSet != null) {
             long currentTime = System.currentTimeMillis();
             if (currentTime < timeSet) {
                 return;
@@ -201,8 +205,8 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
         Boolean isMember = redisUtils.isMember(formatKeyRedis, Long.class);
         if (Boolean.TRUE.equals(isMember)) {
             Long expiredAt = redisUtils.getFromRedis(formatKeyRedis, Long.class);
-            validateOnL1.put(userId, expiredAt);
-            validatedSetCardCache().put(formatKey, validateOnL1);
+            l1CacheValidate.put(userId, expiredAt);
+            validatedSetCardCache().put(formatKey, l1CacheValidate);
             return;
         }
 
@@ -216,8 +220,8 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
         long ttl = parseValidAt(rawValidAt);
         long now = System.currentTimeMillis();
         redisUtils.saveToSet(formatKeyRedis, now + ttl, ttl, TimeUnit.SECONDS);
-        validateOnL1.put(userId, now + ttl);
-        validatedSetCardCache().put(formatKey, validateOnL1);
+        l1CacheValidate.put(userId, now + ttl);
+        validatedSetCardCache().put(formatKey, l1CacheValidate);
     }
 
     private boolean isUnprotected(TempSetCard set) {
