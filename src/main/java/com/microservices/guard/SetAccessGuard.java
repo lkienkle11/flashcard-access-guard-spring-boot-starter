@@ -1,7 +1,6 @@
 package com.microservices.guard;
 
 import com.microservices.dto.common.SetCheckingParam;
-import com.microservices.dto.security.UserPrincipal;
 import reactor.core.publisher.Mono;
 
 public interface SetAccessGuard {
