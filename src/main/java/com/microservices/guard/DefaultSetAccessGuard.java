@@ -7,6 +7,7 @@ import com.microservices.entity.TempSetCard;
 import com.microservices.guard.port.SetFlashcardReader;
 import com.microservices.utils.ReactiveRedisUtils;
 import com.microservices.utils.RedisUtils;
+import io.vavr.control.Option;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.NonFinal;
@@ -79,16 +80,27 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
         Mono<TempSetCard> setCardInfo = Mono.defer(() -> {
             Object checkL1Set = setCardInfoCache().getIfPresent(param.getSetId());
             if (checkL1Set != null) {
-                return Mono.just((TempSetCard) checkL1Set);
+                Option<TempSetCard> optSet = (Option<TempSetCard>) checkL1Set;
+                if (optSet.isDefined()) {
+                    return Mono.just(optSet.get());
+                } else {
+                    throw new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Set not found in cache: " + param.getSetId()
+                    );
+                }
             }
 
             return reader.findReactive(param.getSetId())
                     .switchIfEmpty(Mono.error(new ResponseStatusException(
                             HttpStatus.NOT_FOUND, "Set not found: " + param.getSetId()
                     )))
-                    .flatMap(set -> {
-                        setCardInfoCache().put(param.getSetId(), set);
-                        return Mono.just(set);
+                    .flatMap(Mono::just)
+                    .doOnNext(set -> setCardInfoCache().put(param.getSetId(), Option.of(set)))
+                    .doOnError(e -> {
+                        if (e instanceof ResponseStatusException empty &&
+                                empty.getStatusCode() == HttpStatus.NOT_FOUND) {
+                            setCardInfoCache().put(param.getSetId(), Option.<TempSetCard>none());
+                        }
                     });
         });
 
@@ -167,14 +179,29 @@ public class DefaultSetAccessGuard implements SetAccessGuard {
         String formatKey = String.format(SET_FORMAT_KEY, param.getSetId());
         String formatKeyRedis = String.format(SET_FORMAT_KEY_REDIS, param.getSetId(), userId);
 
-        TempSetCard set = (TempSetCard) setCardInfoCache().getIfPresent(param.getSetId());
+        Option<TempSetCard> optSet = (Option<TempSetCard>)
+                setCardInfoCache().getIfPresent(param.getSetId());
+        TempSetCard set = null;
+
+        if (optSet != null) {
+            if (optSet.isDefined()) {
+                set = optSet.get();
+            } else {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Set not found in cache: " + param.getSetId()
+                );
+            }
+        }
+
         if (set == null) {
             set = reader.findBlocking(param.getSetId());
             if (set == null) {
+                optSet = Option.none();
+                setCardInfoCache().put(param.getSetId(), optSet);
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Set not found: " + param.getSetId());
             }
-            setCardInfoCache().put(param.getSetId(), set);
+            setCardInfoCache().put(param.getSetId(), Option.of(set));
         }
 
         if (isUnprotected(set) || isOwner(param.getUserId(), param.getAuthorizes(), set)) {

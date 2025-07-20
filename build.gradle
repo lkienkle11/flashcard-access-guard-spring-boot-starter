@@ -31,6 +31,8 @@ dependencies {
 
     implementation 'org.springframework.security:spring-security-oauth2-core:6.4.4'
 
+    implementation "io.vavr:vavr:0.10.4"
+
     compileOnly "com.github.lkienkle11:redis-utils:${redisUtilsVersion}"
     compileOnly "com.github.lkienkle11:reactive-redis-utils:${reactiveRedisUtilsVersion}"
 
